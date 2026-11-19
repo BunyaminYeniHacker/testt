@@ -1,4 +1,4 @@
--- WARP ADMIN (all-in-one: core + 4 packs). One file, one loadstring.
+-- WARP ADMIN (all-in-one: core + 6 packs). One file, one loadstring.
 
 do
 print("[WarpAdmin] starting")
@@ -1885,6 +1885,531 @@ else
 warn("[WarpPack4] ERROR: " .. tostring(errp))
 pcall(function()
 game:GetService("StarterGui"):SetCore("SendNotification", { Title = "Warp pack 4 failed", Text = tostring(errp):sub(1, 120), Duration = 8 })
+end)
+end
+end
+
+do
+local okp, errp = pcall(function()
+local A = _G.WarpAPI
+if not A then error("Load WarpAdmin (core) first") end
+local cmd, pair, setFlag, flags, vals, hooks = A.cmd, A.pair, A.setFlag, A.flags, A.vals, A.hooks
+local hum, root, find, say, bind = A.hum, A.root, A.find, A.say, A.bind
+local Players, lp = A.Players, A.lp
+
+local function act(name, desc, fn, al, args)
+cmd({ name = name, desc = desc, run = fn, al = al, args = args })
+end
+local function num(a, d) return tonumber(a[1]) or d end
+local function parts(q, limit)
+local t = {}
+q = (q or ""):lower()
+for _, d in ipairs(workspace:GetDescendants()) do
+if d:IsA("BasePart") and d.Name:lower():find(q, 1, true) then
+t[#t + 1] = d
+if #t >= (limit or 300) then break end
+end
+end
+return t
+end
+
+-- ============ MAP OBJECTS ============
+A.cat("Map")
+local pesp, hid = {}, {}
+act("gotopart", "Teleport to a part by name", function(a)
+local q, r = table.concat(a, " "), root()
+if q == "" or not r then return "Usage: gotopart name", true end
+local t = parts(q, 1)
+if #t == 0 then return "No part found", true end
+r.CFrame = t[1].CFrame * CFrame.new(0, t[1].Size.Y / 2 + 3, 0)
+return "Teleported to " .. t[1].Name
+end, { "tppart" }, "[name]")
+act("findpart", "Count parts that match a name", function(a)
+local q, r = table.concat(a, " "), root()
+if q == "" then return "Usage: findpart name", true end
+local t = parts(q, 500)
+if #t == 0 then return "No part found", true end
+local best = t[1]
+if r then
+for _, p in ipairs(t) do
+if (p.Position - r.Position).Magnitude < (best.Position - r.Position).Magnitude then best = p end
+end
+return #t .. " found, nearest " .. math.floor((best.Position - r.Position).Magnitude) .. " studs away"
+end
+return #t .. " found"
+end, nil, "[name]")
+act("esppart", "Highlight parts by name", function(a)
+local q = table.concat(a, " ")
+if q == "" then return "Usage: esppart name", true end
+local n = 0
+for _, p in ipairs(parts(q, 100)) do
+local hl = Instance.new("Highlight")
+hl.Name = "WarpPartESP"
+hl.FillTransparency = 0.7
+hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+hl.Parent = p
+pesp[#pesp + 1] = hl
+n = n + 1
+end
+return "Highlighted " .. n .. " parts"
+end, nil, "[name]")
+act("unesppart", "Remove part highlights", function()
+for _, h in ipairs(pesp) do
+if h.Parent then h:Destroy() end
+end
+pesp = {}
+return "Highlights removed"
+end)
+act("hidepart", "Hide parts by name (you only)", function(a)
+local q = table.concat(a, " ")
+if q == "" then return "Usage: hidepart name", true end
+local n = 0
+for _, p in ipairs(parts(q, 300)) do
+p.LocalTransparencyModifier = 1
+hid[#hid + 1] = p
+n = n + 1
+end
+return "Hid " .. n .. " parts"
+end, nil, "[name]")
+act("showparts", "Show every part you hid", function()
+for _, p in ipairs(hid) do
+if p.Parent then p.LocalTransparencyModifier = 0 end
+end
+hid = {}
+return "Parts shown"
+end)
+act("deletepart", "Delete parts by name (you only)", function(a)
+local q = table.concat(a, " ")
+if q == "" then return "Usage: deletepart name", true end
+local n = 0
+for _, p in ipairs(parts(q, 300)) do
+p:Destroy()
+n = n + 1
+end
+return "Deleted " .. n .. " parts"
+end, nil, "[name]")
+
+-- ============ INTERACTION (needs executor support) ============
+A.cat("Interact")
+act("touch", "Fire touch on parts by name", function(a)
+if not firetouchinterest then return "Your executor lacks firetouchinterest", true end
+local r, q = root(), table.concat(a, " ")
+if not r or q == "" then return "Usage: touch name", true end
+local n = 0
+for _, p in ipairs(parts(q, 100)) do
+pcall(function()
+firetouchinterest(r, p, 0)
+firetouchinterest(r, p, 1)
+end)
+n = n + 1
+end
+return "Touched " .. n .. " parts"
+end, nil, "[name]")
+act("clickall", "Fire click detectors by name", function(a)
+if not fireclickdetector then return "Your executor lacks fireclickdetector", true end
+local q, n = table.concat(a, " "):lower(), 0
+for _, d in ipairs(workspace:GetDescendants()) do
+if d:IsA("ClickDetector") and (q == "" or (d.Parent and d.Parent.Name:lower():find(q, 1, true))) then
+pcall(fireclickdetector, d)
+n = n + 1
+end
+end
+return "Clicked " .. n .. " detectors"
+end, nil, "[name]")
+act("prompts", "Count proximity prompts", function()
+local n = 0
+for _, d in ipairs(workspace:GetDescendants()) do
+if d:IsA("ProximityPrompt") then n = n + 1 end
+end
+return n .. " proximity prompts"
+end)
+local promptOrig = {}
+act("instantprompts", "Remove hold time on prompts", function()
+local n = 0
+for _, d in ipairs(workspace:GetDescendants()) do
+if d:IsA("ProximityPrompt") then
+promptOrig[d] = d.HoldDuration
+d.HoldDuration = 0
+n = n + 1
+end
+end
+return n .. " prompts are instant"
+end, { "instaprompt" })
+act("restoreprompts", "Restore prompt hold times", function()
+for d, v in pairs(promptOrig) do
+if d.Parent then d.HoldDuration = v end
+end
+promptOrig = {}
+return "Prompts restored"
+end)
+act("firepp", "Use nearby proximity prompts", function(a)
+if not fireproximityprompt then return "Your executor lacks fireproximityprompt", true end
+local r, q, n = root(), table.concat(a, " "):lower(), 0
+if not r then return "No character", true end
+for _, d in ipairs(workspace:GetDescendants()) do
+if d:IsA("ProximityPrompt") and d.Parent and d.Parent:IsA("BasePart") then
+local near = (d.Parent.Position - r.Position).Magnitude <= d.MaxActivationDistance + 2
+if near and (q == "" or d.Parent.Name:lower():find(q, 1, true)) then
+pcall(fireproximityprompt, d)
+n = n + 1
+end
+end
+end
+return "Used " .. n .. " prompts"
+end, nil, "[name]")
+task.spawn(function()
+while A.alive() do
+if flags.autoprompt and fireproximityprompt then
+local r = root()
+if r then
+for _, d in ipairs(workspace:GetDescendants()) do
+if d:IsA("ProximityPrompt") and d.Parent and d.Parent:IsA("BasePart") then
+if (d.Parent.Position - r.Position).Magnitude <= d.MaxActivationDistance then
+pcall(fireproximityprompt, d)
+end
+end
+end
+end
+end
+task.wait(0.4)
+end
+end)
+pair("autoprompt", "unautoprompt", "autoprompt", "Auto use prompts you stand near")
+
+-- ============ PLAYER LOOKUP ============
+A.cat("Players")
+local function sorted()
+local r, t = root(), {}
+if not r then return t end
+for _, p in ipairs(Players:GetPlayers()) do
+local tr = p ~= lp and p.Character and p.Character:FindFirstChild("HumanoidRootPart")
+if tr then t[#t + 1] = { p = p, d = (tr.Position - r.Position).Magnitude, r = tr } end
+end
+table.sort(t, function(x, y) return x.d < y.d end)
+return t
+end
+act("nearest", "Who is closest to you", function()
+local t = sorted()
+if #t == 0 then return "Nobody else is around", true end
+return t[1].p.Name .. " is " .. math.floor(t[1].d) .. " studs away"
+end)
+act("farthest", "Who is farthest from you", function()
+local t = sorted()
+if #t == 0 then return "Nobody else is around", true end
+local l = t[#t]
+return l.p.Name .. " is " .. math.floor(l.d) .. " studs away"
+end)
+act("gotonearest", "Teleport to the closest player", function()
+local t, r = sorted(), root()
+if #t == 0 or not r then return "Nobody else is around", true end
+r.CFrame = t[1].r.CFrame * CFrame.new(0, 0, 3)
+return "Teleported to " .. t[1].p.Name
+end)
+act("gotorandom", "Teleport to a random player", function()
+local t, r = sorted(), root()
+if #t == 0 or not r then return "Nobody else is around", true end
+local pick = t[math.random(#t)]
+r.CFrame = pick.r.CFrame * CFrame.new(0, 0, 3)
+return "Teleported to " .. pick.p.Name
+end)
+act("viewrandom", "Spectate a random player", function()
+local t = sorted()
+if #t == 0 then return "Nobody else is around", true end
+local pick = t[math.random(#t)]
+local h = pick.p.Character and pick.p.Character:FindFirstChildOfClass("Humanoid")
+if not h then return "No character", true end
+workspace.CurrentCamera.CameraSubject = h
+return "Viewing " .. pick.p.Name
+end)
+act("listfriends", "Friends who are in this server", function()
+local t = {}
+for _, p in ipairs(Players:GetPlayers()) do
+if p ~= lp then
+local ok2, f = pcall(function() return lp:IsFriendsWith(p.UserId) end)
+if ok2 and f then t[#t + 1] = p.Name end
+end
+end
+return #t > 0 and ("Friends here: " .. table.concat(t, ", ")) or "No friends in this server"
+end, { "friends" })
+act("teamlist", "List teams and player counts", function()
+local teams = game:GetService("Teams"):GetTeams()
+if #teams == 0 then return "This game has no teams", true end
+local t = {}
+for _, tm in ipairs(teams) do t[#t + 1] = tm.Name .. " " .. #tm:GetPlayers() end
+return table.concat(t, ", ")
+end)
+act("leaderstats", "Show a player's leaderstats", function(a)
+local p = lp
+if a[1] then
+p = find(a[1])
+if not p then return "Player not found", true end
+end
+local ls = p:FindFirstChild("leaderstats")
+if not ls then return "No leaderstats found", true end
+local t = {}
+for _, v in ipairs(ls:GetChildren()) do
+if v:IsA("ValueBase") then t[#t + 1] = v.Name .. " " .. tostring(v.Value) end
+end
+return p.Name .. ": " .. table.concat(t, ", ")
+end, { "lstats" }, "[player]")
+act("health", "Show a player's health", function(a)
+local p = lp
+if a[1] then
+p = find(a[1])
+if not p then return "Player not found", true end
+end
+local h = p.Character and p.Character:FindFirstChildOfClass("Humanoid")
+if not h then return "No character", true end
+return p.Name .. ": " .. math.floor(h.Health) .. " / " .. math.floor(h.MaxHealth)
+end, nil, "[player]")
+end)
+
+if okp then
+print("[WarpPack5] loaded")
+else
+warn("[WarpPack5] ERROR: " .. tostring(errp))
+pcall(function()
+game:GetService("StarterGui"):SetCore("SendNotification", { Title = "Warp pack 5 failed", Text = tostring(errp):sub(1, 120), Duration = 8 })
+end)
+end
+end
+
+do
+local okp, errp = pcall(function()
+local A = _G.WarpAPI
+if not A then error("Load WarpAdmin (core) first") end
+local cmd, pair, setFlag, flags, vals, hooks = A.cmd, A.pair, A.setFlag, A.flags, A.vals, A.hooks
+local hum, root, find, say, bind = A.hum, A.root, A.find, A.say, A.bind
+local RS, UIS, Light, lp = A.RS, A.UIS, A.Light, A.lp
+local clip = setclipboard or toclipboard or function() end
+
+local function act(name, desc, fn, al, args)
+cmd({ name = name, desc = desc, run = fn, al = al, args = args })
+end
+local function num(a, d) return tonumber(a[1]) or d end
+
+-- ============ HUD ============
+A.cat("HUD")
+local hud, frames = nil, 0
+bind(RS.RenderStepped, function() frames = frames + 1 end)
+hooks.hud = function(on)
+if on and not hud then
+hud = A.mk("TextLabel", {
+AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -10, 0, 64), Size = UDim2.fromOffset(220, 40),
+BackgroundTransparency = 1, TextColor3 = Color3.new(1, 1, 1), TextStrokeTransparency = 0.6,
+Font = Enum.Font.GothamMedium, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Right,
+TextYAlignment = Enum.TextYAlignment.Top, Text = "",
+}, A.gui)
+end
+if hud then hud.Visible = on end
+end
+task.spawn(function()
+while A.alive() do
+if flags.hud and hud then
+local fps = frames * 2
+frames = 0
+local r = root()
+local ping = "?"
+pcall(function()
+ping = math.floor(game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue()) .. " ms"
+end)
+local pos = ""
+if r then pos = "Pos " .. math.floor(r.Position.X) .. ", " .. math.floor(r.Position.Y) .. ", " .. math.floor(r.Position.Z) end
+hud.Text = "FPS " .. fps .. "   Ping " .. ping .. "\n" .. pos
+end
+task.wait(0.5)
+end
+end)
+pair("hud", "unhud", "hud", "Show FPS, ping and position", nil, nil, { "stats" })
+
+-- ============ FREECAM ============
+A.cat("Camera")
+vals.freecam = 1
+local controls
+task.spawn(function()
+local ok2, m = pcall(function()
+return require(lp:WaitForChild("PlayerScripts"):WaitForChild("PlayerModule", 10))
+end)
+if ok2 and m then pcall(function() controls = m:GetControls() end) end
+end)
+local fcYaw, fcPitch, fcPos = 0, 0, Vector3.new(0, 0, 0)
+hooks.freecam = function(on)
+local cam = workspace.CurrentCamera
+local r = root()
+if on then
+fcPos = cam.CFrame.Position
+local rx, ry = cam.CFrame:ToEulerAnglesYXZ()
+fcPitch, fcYaw = rx, ry
+cam.CameraType = Enum.CameraType.Scriptable
+if r then r.Anchored = true end
+else
+if r then r.Anchored = false end
+cam.CameraType = Enum.CameraType.Custom
+local h = hum()
+if h then cam.CameraSubject = h end
+end
+end
+bind(UIS.InputChanged, function(i, gpe)
+if not flags.freecam or gpe then return end
+local touch = i.UserInputType == Enum.UserInputType.Touch
+local mouse = i.UserInputType == Enum.UserInputType.MouseMovement and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
+if touch or mouse then
+fcYaw = fcYaw - i.Delta.X * 0.005
+fcPitch = math.clamp(fcPitch - i.Delta.Y * 0.005, -1.5, 1.5)
+end
+end)
+bind(RS.RenderStepped, function(dt)
+if not flags.freecam then return end
+local cam = workspace.CurrentCamera
+cam.CameraType = Enum.CameraType.Scriptable
+local rot = CFrame.Angles(0, fcYaw, 0) * CFrame.Angles(fcPitch, 0, 0)
+local mv = Vector3.new(0, 0, 0)
+if controls then
+local ok2, v = pcall(function() return controls:GetMoveVector() end)
+if ok2 and v then mv = v end
+end
+local move = rot.RightVector * mv.X - rot.LookVector * mv.Z
+if UIS:IsKeyDown(Enum.KeyCode.Space) or UIS:IsKeyDown(Enum.KeyCode.E) then move = move + Vector3.new(0, 1, 0) end
+if UIS:IsKeyDown(Enum.KeyCode.LeftShift) or UIS:IsKeyDown(Enum.KeyCode.Q) then move = move - Vector3.new(0, 1, 0) end
+fcPos = fcPos + move * 40 * vals.freecam * dt
+cam.CFrame = CFrame.new(fcPos) * rot
+end)
+pair("freecam", "unfreecam", "freecam", "Free camera (drag to look)", "freecam", "[speed]", { "fc" })
+
+-- ============ EXECUTOR / SYSTEM ============
+A.cat("System")
+act("executor", "Show your executor name", function()
+if not identifyexecutor then return "Unknown executor", true end
+local n, v = identifyexecutor()
+return tostring(n) .. (v and (" " .. tostring(v)) or "")
+end)
+act("caps", "Check which executor features exist", function()
+local list = {
+{ "setclipboard", setclipboard }, { "firetouchinterest", firetouchinterest },
+{ "fireclickdetector", fireclickdetector }, { "fireproximityprompt", fireproximityprompt },
+{ "Drawing", Drawing }, { "setfpscap", setfpscap }, { "gethui", gethui },
+{ "request", request or http_request }, { "writefile", writefile }, { "hookfunction", hookfunction },
+}
+local t = {}
+for _, v in ipairs(list) do t[#t + 1] = v[1] .. (v[2] and " yes" or " no") end
+return table.concat(t, ", ")
+end)
+act("graphics", "Set graphics quality (1-21)", function(a)
+local n = math.clamp(math.floor(num(a, 5)), 1, 21)
+pcall(function()
+for _, e in ipairs(Enum.QualityLevel:GetEnumItems()) do
+if e.Value == n then settings().Rendering.QualityLevel = e end
+end
+end)
+return "Graphics " .. n
+end, nil, "[1-21]")
+act("mystats", "Show your character stats", function()
+local h = hum()
+if not h then return "No character", true end
+return "Speed " .. math.floor(h.WalkSpeed) .. ", Jump " .. math.floor(h.JumpPower) .. ", Health " .. math.floor(h.Health)
+.. ", Gravity " .. math.floor(workspace.Gravity) .. ", FOV " .. math.floor(workspace.CurrentCamera.FieldOfView)
+end, { "me" })
+act("creator", "Show the game creator id", function() return "Creator id " .. game.CreatorId .. " (" .. tostring(game.CreatorType) .. ")" end)
+act("placeversion", "Show the place version", function() return "Place version " .. game.PlaceVersion end)
+act("maxplayers", "Show the server size", function() return "Max players " .. A.Players.MaxPlayers end)
+
+-- ============ TEXT TOOLS ============
+A.cat("Text")
+act("copy", "Copy text to your clipboard", function(a)
+local s = table.concat(a, " ")
+if s == "" then return "Usage: copy hello", true end
+pcall(clip, s)
+return "Copied"
+end, nil, "[text]")
+act("calc", "Calculate a math expression", function(a)
+local e = table.concat(a, " ")
+if e == "" or not e:match("^[%d%s%+%-%*/%^%%%.%(%)]+$") then return "Usage: calc 2+2*3", true end
+local f = loadstring("return " .. e)
+if not f then return "Invalid expression", true end
+local ok2, v = pcall(f)
+if not ok2 then return "Invalid expression", true end
+return e .. " = " .. tostring(v)
+end, { "math" }, "[expression]")
+act("choose", "Pick a random option", function(a)
+if #a < 2 then return "Usage: choose pizza burger tacos", true end
+return "Pick: " .. a[math.random(#a)]
+end, nil, "[a b c]")
+act("8ball", "Ask the magic 8 ball", function()
+local r = { "Yes", "No", "Maybe", "Definitely", "Ask again later", "Not a chance", "Looks good", "Very doubtful" }
+return r[math.random(#r)]
+end)
+act("reverse", "Reverse some text", function(a) return table.concat(a, " "):reverse() end, nil, "[text]")
+act("upper", "Make text uppercase", function(a) return table.concat(a, " "):upper() end, nil, "[text]")
+act("lower", "Make text lowercase", function(a) return table.concat(a, " "):lower() end, nil, "[text]")
+act("length", "Count characters in text", function(a) return #table.concat(a, " ") .. " characters" end, { "len" }, "[text]")
+local sw
+act("stopwatch", "Start or stop a stopwatch", function()
+if not sw then
+sw = os.clock()
+return "Stopwatch started"
+end
+local t = os.clock() - sw
+sw = nil
+return string.format("Stopwatch: %.2f seconds", t)
+end)
+
+-- ============ LIGHTING THEMES ============
+A.cat("Themes")
+local base = { Light.Ambient, Light.Brightness, Light.ClockTime }
+local names = { "sunset", "sunrise", "noon", "midnight", "spooky", "neon", "vintage", "cold", "warm", "noir" }
+local themes = {
+sunset = { 18, { 120, 70, 60 }, { 255, 200, 170 }, 0.2, 2 },
+sunrise = { 6, { 110, 90, 100 }, { 255, 225, 200 }, 0.1, 2 },
+noon = { 12, { 140, 140, 140 }, { 255, 255, 255 }, 0.1, 3 },
+midnight = { 0, { 20, 25, 50 }, { 180, 190, 255 }, -0.1, 1 },
+spooky = { 0, { 40, 10, 10 }, { 255, 150, 150 }, -0.3, 0.5 },
+neon = { 0, { 60, 20, 90 }, { 200, 150, 255 }, 1, 1 },
+vintage = { 15, { 130, 110, 80 }, { 255, 235, 190 }, -0.5, 2 },
+cold = { 12, { 90, 110, 140 }, { 190, 220, 255 }, 0, 2 },
+warm = { 16, { 140, 110, 80 }, { 255, 220, 180 }, 0.2, 2 },
+noir = { 14, { 100, 100, 100 }, { 255, 255, 255 }, -1, 2 },
+}
+for _, n in ipairs(names) do
+act(n, "Lighting theme: " .. n, function()
+local t = themes[n]
+Light.ClockTime = t[1]
+Light.Ambient = Color3.fromRGB(t[2][1], t[2][2], t[2][3])
+Light.Brightness = t[5]
+local cc = Light:FindFirstChild("WarpCC")
+if not cc then
+cc = Instance.new("ColorCorrectionEffect")
+cc.Name = "WarpCC"
+cc.Parent = Light
+end
+cc.TintColor = Color3.fromRGB(t[3][1], t[3][2], t[3][3])
+cc.Saturation = t[4]
+return "Theme " .. n
+end)
+end
+act("resettheme", "Undo lighting themes", function()
+Light.Ambient, Light.Brightness, Light.ClockTime = base[1], base[2], base[3]
+local cc = Light:FindFirstChild("WarpCC")
+if cc then cc:Destroy() end
+return "Lighting reset"
+end)
+
+-- ============ SPEED PRESETS ============
+A.cat("Presets")
+for _, p in ipairs({ { "walk", 16 }, { "run", 32 }, { "sprint", 60 }, { "crawl", 8 } }) do
+act(p[1], "Set walk speed to " .. p[2], function()
+vals.speed = p[2]
+setFlag("speed", true)
+return p[1] .. " (" .. p[2] .. ")"
+end)
+end
+end)
+
+if okp then
+print("[WarpPack6] loaded")
+else
+warn("[WarpPack6] ERROR: " .. tostring(errp))
+pcall(function()
+game:GetService("StarterGui"):SetCore("SendNotification", { Title = "Warp pack 6 failed", Text = tostring(errp):sub(1, 120), Duration = 8 })
 end)
 end
 end
